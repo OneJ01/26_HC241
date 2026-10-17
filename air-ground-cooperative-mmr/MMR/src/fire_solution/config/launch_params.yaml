@@ -1,0 +1,338 @@
+# launch_params.yaml
+# ─────────────────────────────────────────────────────────────────────────
+# fire_solution_node 런타임 파라미터
+#
+# 사용법:
+#   ros2 launch fire_solution fire_solution.launch.py
+#   → 이 파일을 자동으로 로드함
+#
+# 런타임 단일 파라미터 변경:
+#   ros2 param set /fire_solution_node barrel_height_m 0.42
+#
+# ─────────────────────────────────────────────────────────────────────────
+
+fire_solution_node:
+  ros__parameters:
+
+    # ══════════════════════════════════════════════════════════════
+    # [발사체 물리] — 경연 당일 캘리브레이션 후 교체
+    # ══════════════════════════════════════════════════════════════
+
+    muzzle_velocity: 26.05
+    gravity_ms2: 9.8044
+
+    # ══════════════════════════════════════════════════════════════
+    # [지오이드 보정]
+    # ══════════════════════════════════════════════════════════════
+
+    geoid_undulation_m: 26.5     # ← 경연장 위치 확인 후 교체
+
+    # ══════════════════════════════════════════════════════════════
+    # [포신 기구] — 조립·제작 완료 후 반드시 실측값으로 교체
+    # ══════════════════════════════════════════════════════════════
+
+    barrel_height_m: 0.96      # ← 실측 후 교체
+    barrel_length_m: 0.30      # ← 실측 후 교체
+
+    # [변경] 포신 기구 물리 한계 실측값으로 수정
+    #   이전값: elevation_min_deg=5.0, elevation_max_deg=80.0
+    #   유효 사거리: ~19.47m (61°) ~ 22.95m (45°)  [v0=15m/s, 평지 기준]
+    elevation_min_deg: 45.0
+    elevation_max_deg: 61.0
+
+    # 실제 편각 정렬은 차체 회전으로 수행하되, 기존 지도 표시는
+    # 현재 헤딩 기준 ±45° 부채꼴을 유지
+    horizontal_aim_mode: "BODY_ROTATION"
+    pan_half_angle_deg: 45.0
+
+    # ══════════════════════════════════════════════════════════════
+    # [DEM 지형 데이터]
+    # ══════════════════════════════════════════════════════════════
+
+    dem_path: ""
+    prefer_dem_for_ground: true
+    input_altitude_mode: "amsl"
+    vertical_datum: "AMSL"
+    world_frame: "EPSG:32652"
+    dem_nodata: -9999.0
+
+    # ══════════════════════════════════════════════════════════════
+    # [수치해석]
+    # ══════════════════════════════════════════════════════════════
+
+    trajectory_check_step_m: 1.0
+    newton_tol_m: 0.05
+
+    # ══════════════════════════════════════════════════════════════
+    # [노드 동작]
+    # ══════════════════════════════════════════════════════════════
+
+    publish_rate_hz: 5.0
+    mmr_fix_topic: "/gnss/fix_hp"
+    gnss_heading_topic: "/gnss/heading"
+
+    # 팬축이 없으므로 차체 편각 계산에 GNSS 헤딩 필수
+    require_heading_for_solution: true
+    max_mmr_fix_age_sec: 3.0
+    max_heading_age_sec: 3.0
+
+    # 새 표적이 들어오거나 명시적으로 clear될 때까지 마지막 표적 유지
+    target_latch_enabled: true
+    # latch=false인 legacy 모드에서만 적용
+    max_target_age_sec: 1.0
+
+    # solution_revision 증가 판정 임계값
+    revision_position_threshold_m: 0.05
+    revision_altitude_threshold_m: 0.05
+    revision_heading_threshold_deg: 0.10
+    revision_target_threshold_m: 0.01
+
+    # 5Hz는 입력 감시와 최신 결과 heartbeat 용도로 유지한다.
+    # 실제 탄도 solve는 위 임계값을 넘는 입력 변화가 있을 때만 수행한다.
+    # 차체가 moving/not-stopped -> stopped로 바뀌는 순간에는 즉시 최종 재계산한다.
+    drive_status_topic: "/mmr/drive/status"
+    recompute_on_drive_stop: true
+
+    # ══════════════════════════════════════════════════════════════
+    # [신규] Open-Meteo 풍속 보정
+    # 데이터 출처: Open-Meteo.com (CC-BY 4.0). 무료 티어 비상업적 이용 한정.
+    # 제한: 10,000회/일, 5,000회/시, 600회/분
+    # ══════════════════════════════════════════════════════════════
+
+    # false로 두면 이 기능 도입 이전과 100% 동일하게 동작한다 (완전 롤백 스위치)
+    wind_correction_enabled: true
+    wind_api_enabled: true
+
+    # --- 조회 좌표 -------------------------------------------------
+    # Open-Meteo 격자 해상도는 1~11km이므로 운동장 내 수 m 차이는 무의미하다.
+    # MMR RTK fix가 살아 있으면 그것을, 아니면 아래 고정 좌표를 사용한다.
+    wind_use_mmr_fix_as_station: true
+    wind_station_lat: 37.3402      # 한국공학대학교 (시흥시 산기대학로 237)
+    wind_station_lon: 126.7336
+
+    # --- API 호출 안정성 -------------------------------------------
+    # 갱신 트리거는 최대 3개까지 접수한다. 재시도는 이 접수 예산을 추가 소모하지 않으며,
+    # 아래 백오프/최대 재시도 횟수로 별도 제한한다.
+    wind_max_api_calls: 3
+    wind_cache_ttl_sec: 900.0          # 15분 이내 캐시는 일반 갱신에서 재호출하지 않음
+    wind_min_call_interval_sec: 30.0   # 짧은 간격의 강제 요청도 버리지 않고 큐에서 대기
+    wind_http_timeout_sec: 10.0        # 테더링/무선망 지연을 고려한 단일 HTTP 제한시간
+    wind_max_retry_attempts: 3         # 최초 실패 후 최대 3회 자동 재시도
+    wind_retry_initial_sec: 30.0       # 재시도 간격: 30 → 60 → 120초
+    wind_retry_max_sec: 120.0
+    wind_max_data_age_sec: 3600.0      # model_time/fetch time 중 더 오래된 나이가 1시간 초과면 무효
+    wind_refresh_on_new_target: true
+    wind_refresh_on_drive_stop: true
+    wind_refresh_topic: "/mmr/wind/refresh"
+
+    # 계산 시 사용한 풍속 메타(기존 호환)
+    wind_status_topic: "/mmr/wind/status"
+    # 표적·헤딩·계산 성공 여부와 무관한 API 수집 상태
+    wind_provider_status_topic: "/mmr/wind/provider_status"
+    wind_provider_status_publish_rate_hz: 1.0
+
+    # --- 물리 계수 ------------------------------------------------
+    # 편류 Δ = ½ · β · W · t_f²   (선형 항력 1차 전개)
+    # β ≈ ρ·Cd·A/(2m)·v̄  로 이론 추정 후 실사격으로 반드시 캘리브레이션할 것.
+    # 예) m=0.15kg, d=42mm, Cd=0.5, v̄=18m/s → β ≈ 0.051
+    wind_coupling_per_sec: 0.05
+    wind_height_exponent: 0.143   # 개활지 멱법칙 지수. 10m 풍속 → 탄도 평균고도 환산
+    wind_gust_blend: 0.0          # 0=평균풍만, 1=돌풍값. 보수적 조준 시 0.3 권장
+    wind_max_offset_m: 5.0        # 조준점 이동 안전 상한
+    wind_iterations: 2            # 가상 조준점 반복 재계산 횟수
+    wind_min_speed_ms: 0.3        # 이 미만이면 보정 생략
+
+    # --- 수동 입력 (풍속계 실측 / 네트워크 불가 시) ----------------
+    # 0 이상이면 API를 무시하고 이 값을 사용한다. -1이면 비활성.
+    wind_manual_speed_ms: -1.0
+    wind_manual_dir_from_deg: 0.0
+
+
+
+turret_control_node:
+  ros__parameters:
+
+    # ── ROS topics ───────────────────────────────────────────────
+    aim_request_topic: "/mmr/turret/aim_request"
+    home_request_topic: "/mmr/turret/home_request"
+    fire_confirm_topic: "/mmr/fire_confirm"
+    estop_topic: "/mmr/emergency_stop"
+    status_topic: "/mmr/turret/status"
+
+    # 기존 GUI/로그 호환용 출력 토픽
+    legacy_cmd_topic: "/mmr/turret_cmd"
+    legacy_fire_ready_topic: "/mmr/fire_ready"
+
+    # ── UART / STM ───────────────────────────────────────────────
+    serial_port: "/dev/ttyACM0"
+    baudrate: 115200
+    serial_timeout_sec: 0.2
+    uart_enabled: true
+
+    # 시작 즉시 HOME0 수행
+    home_on_startup: true
+
+    # STM USB-CDC는 포트 open 시 리셋될 수 있으므로 startup HOME0 전 대기
+    startup_uart_settle_delay_sec: 2.0
+    motor_wait_timeout_sec: 8.0
+    motor_wait_poll_sec: 0.10
+    stop_to_fire_delay_sec: 0.05
+
+    # 발사 완료를 GUI에 잠시 표시한 뒤 포신을 자동 HOME 복귀한다.
+    auto_home_after_fire: true
+    post_fire_home_delay_sec: 1.5
+
+    # E-Stop RESET 직후 현재 펄스 위치를 신뢰하지 않고 자동 HOME 복귀한다.
+    auto_home_after_estop_reset: true
+
+    # HOME0 재진입 안정화
+    # 재홈 전에 STOP을 전송하고 STATUS의 M0RUN=0을 확인한다.
+    home_prepare_stop_enabled: true
+    home_idle_timeout_sec: 2.0
+    home_idle_poll_sec: 0.10
+    home_stop_settle_sec: 0.10
+
+    # HOME0이 거부되면 STOP/유휴 확인 후 1회만 재시도한다.
+    home_command_retry_count: 1
+    home_retry_delay_sec: 0.25
+
+    # ERR HOME0 이후에도 POS=0, HOMED=1, HOME45=1, M0RUN=0이면
+    # 이미 정상 홈에 있는 것으로 안전하게 인정한다.
+    home_accept_valid_status_after_reject: true
+
+    # CS-D508 In Position(ALM) 기반 조준/발사 완료 판정
+    # STM STATUS의 INP=1과 M0RUN=0이 확인되어야 조준 완료/발사를 허용한다.
+    require_in_position_for_aim_ready: true
+    require_in_position_for_fire: true
+    in_position_stable_count: 2
+
+    # ── 틸트축 실측 LUT 매핑 ────────────────────────────────────
+    # 물리 HOME: 43도 = 0 pulse
+    # 운용 최소: 45도 = 100 pulse
+    # 운용 최대: 61도 = 950 pulse
+    tilt_home_deg: 43.0
+    tilt_command_min_deg: 45.0
+    tilt_max_deg: 61.0
+    tilt_max_pulse: 950
+    tilt_mapping_mode: "lut"
+    tilt_mapping_angles_deg: [43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0, 60.0, 61.0]
+    tilt_mapping_pulses: [0, 50, 100, 150, 200, 250, 310, 360, 420, 470, 520, 590, 640, 690, 740, 790, 840, 900, 950]
+    elevation_motor_id: 0
+    invert_elevation_dir: false
+
+    # 목표각과 현재각 차이가 이 값 이하이면 이동 생략
+    deadband_deg: 0.20
+    mechanical_limit_tolerance_deg: 0.20
+
+    # ── 백래시 대응 ─────────────────────────────────────────────
+    # 매 조준마다 무조건 홈 복귀할지 여부
+    rehome_before_each_aim: false
+
+    # 새 목표가 현재 위치보다 낮으면 HOME0 후 같은 방향으로 재접근
+    rehome_if_target_below_current: true
+
+    # ── 상태/테스트 ──────────────────────────────────────────────
+    status_publish_rate_hz: 5.0
+    terminal_input_enabled: true
+
+    # 실제 운용에서는 반드시 false 유지
+    allow_fire_without_aim: false
+
+
+aim_coordinator_node:
+  ros__parameters:
+
+    # ── ROS topics ───────────────────────────────────────────────
+    fire_solution_topic: "/mmr/fire_solution"
+    imu_status_topic: "/imu/tilt_status"
+    drive_status_topic: "/mmr/drive/status"
+    turret_status_topic: "/mmr/turret/status"
+    joy_topic: "/joy"
+    operator_input_topic: "/mmr/operator_input"
+
+    align_cmd_topic: "/mmr/drive/align_cmd"
+    aim_request_topic: "/mmr/turret/aim_request"
+    home_request_topic: "/mmr/turret/home_request"
+    fire_confirm_topic: "/mmr/fire_confirm"
+    engagement_status_topic: "/mmr/engagement_status"
+    target_point_topic: "/target/point"
+
+    # Xbox Series controller: A=0, Y=3
+    # LB=4 / RB=5 수동 제자리 회전은 bldc_drive_node가 직접 처리
+    align_aim_button: 0
+    fire_button: 3
+    operator_input_timeout_sec: 0.5
+    control_rate_hz: 20.0
+
+    # 숨김 로컬 진단 모드: Xbox B+X 동시 홀드 + 좌/우 조향축 중립.
+    # 매 실행 시 OFF로 시작하며, 실제 FIRE 명령은 이 모드에서 송신하지 않는다.
+    diagnostic_hidden_mode_enabled: true
+    diagnostic_toggle_buttons: [1, 2]
+    diagnostic_toggle_hold_sec: 3.0
+    diagnostic_neutral_axis_indices: [1, 3]
+    diagnostic_neutral_deadzone: 0.10
+    diagnostic_local_event_path: "/tmp/mmr_local_diagnostic_event.json"
+
+    # ── 차체 정렬 ────────────────────────────────────────────────
+    align_enter_tolerance_deg: 2.0
+    align_exit_tolerance_deg: 3.0
+    align_settle_sec: 0.5
+
+    align_fast_error_deg: 10.0
+    align_slow_error_deg: 3.0
+    # 자동 곡선 정렬 외측 바퀴 RPM. 내측은 auto_align_arc_inner_ratio를 곱해 사용.
+    align_fast_rpm: 7.0
+    align_medium_rpm: 6.0
+    align_slow_rpm: 5.0
+
+    # ── Hold-to-confirm ──────────────────────────────────────────
+    aim_hold_sec: 0.5
+    fire_hold_sec: 1.0
+
+    # ── 데이터 freshness / 안전조건 ─────────────────────────────
+    max_solution_age_sec: 1.0
+    max_imu_age_sec: 0.5
+    max_drive_status_age_sec: 0.75
+    max_turret_status_age_sec: 1.0
+    require_drive_feedback: true
+    require_imu_stationary: true
+    # 저속 곡선 조향 중에는 raw GNSS yaw로 계속 정렬하고, 정지 후 IMU 보정 재검증
+    allow_motion_during_body_align: true
+
+    # ── IMU 3D 보정 / 포신 범위 ─────────────────────────────────
+    imu_correction_enabled: true
+    imu_correction_threshold_deg: 0.5
+    imu_roll_sign: 1.0
+    imu_pitch_sign: 1.0
+    imu_roll_limit_deg: 15.0
+    imu_pitch_limit_deg: 15.0
+
+    elevation_min_deg: 45.0
+    elevation_max_deg: 61.0
+    mechanical_limit_tolerance_deg: 0.2
+    final_elevation_tolerance_deg: 0.5
+
+    home_request_retry_sec: 2.0
+
+    # 발사 완료·자동 홈 복귀 후에도 마지막 표적을 유지한다.
+    # 동일 표적 재교전은 A 버튼을 새로 눌러야 시작되므로 자동 재진입하지 않는다.
+    retain_target_after_fire: true
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# MMR GUI 표적·탄착 표시/판정 파라미터
+# ─────────────────────────────────────────────────────────────────────────
+main_gui:
+  ros__parameters:
+    diagnostic_local_event_path: "/tmp/mmr_local_diagnostic_event.json"
+
+    # GCS와 동일한 표적 중심 성공 판정 반경
+    impact_threshold_m: 15.0
+    # 지도에 보관할 최근 탄착 이력 수
+    impact_history_max_count: 20
+    # /target/point 유효성 검증. fire_solution_node 기준과 동일하게 유지
+    require_target_sync_ok: true
+    require_projection_ok: true
+    require_dem_intersection_ok: true
+    # 새 표적 발행 시각보다 이전인 탄착점과 초기화 전 지연 응답 차단
+    reject_stale_impact: true

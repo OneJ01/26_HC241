@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gnss_driver</name>
+  <version>1.2.0</version>
+  <description>
+    u-blox ZED-F9P 듀얼 안테나 GNSS 드라이버 패키지.
+    UBX-NAV-RELPOSNED (Moving Baseline RTK 헤딩),
+    UBX-NAV-HPPOSLLH (초정밀 위경도),
+    UBX-NAV-PVT (일반 상태) 를 직접 파싱하여 ROS 2 토픽으로 발행.
+  </description>
+  <maintainer email="dohwanko@todo.todo">dohwanko</maintainer>
+  <license>Apache License 2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>rtcm_msgs</depend>
+  <depend>pyubx2</depend>
+  <depend>pyproj</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

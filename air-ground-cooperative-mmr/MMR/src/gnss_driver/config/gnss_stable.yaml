@@ -1,0 +1,65 @@
+# gnss_stable.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# MMR 듀얼 ZED-F9P 안정 운용 기준 설정
+#
+# 구조:
+#   ntrip_lite_node : Lite 보드(Moving Base/Base)에 NTRIP RTCM 직접 주입
+#   ubx_rover_node  : 큰 보드(Rover) HPPOSLLH/RELPOSNED 파싱 및 토픽 발행
+#
+# 포트는 실제 장착 후 아래 값을 수정하십시오.
+
+ntrip_lite_node:
+  ros__parameters:
+    serial_port: "/dev/ttyUSB0"      # Lite 보드 포트
+    baudrate: 115200
+
+    host: "RTS2.ngii.go.kr"
+    port: 2101
+    mountpoint: "VRS-RTCM32"
+
+    # 국토지리원 계정이 필요한 환경이면 launch argument 또는 환경변수로 주입한다.
+    # 예시:
+    #   export MMR_NTRIP_AUTHENTICATE=true
+    #   export MMR_NTRIP_USERNAME=<계정>
+    #   export MMR_NTRIP_PASSWORD=<비밀번호>
+    # 또는:
+    #   ros2 launch gnss_driver gnss_stable_launch.py ntrip_authenticate:=true ntrip_username:=<계정> ntrip_password:=<비밀번호>
+    authenticate: false
+    username: ""
+    password: ""
+
+    gga_send_interval_sec: 5.0
+    rtcm_timeout_sec: 35.0
+    reconnect_delay_sec: 5.0
+    status_publish_interval_sec: 2.0
+
+    use_manual_gga_fallback: false
+    fallback_lat_deg: 37.3411111111
+    fallback_lon_deg: 126.7317277778
+    fallback_alt_m: 4.0
+
+    status_topic: "/gnss/ntrip_status"
+    lite_fix_topic: "/gnss/lite/fix_pvt"
+
+ubx_rover_node:
+  ros__parameters:
+    serial_port: "/dev/ttyACM0"      # 큰 보드 Rover 포트
+    baudrate: 115200
+    frame_id: "gps_link"
+
+    status_publish_rate_hz: 2.0
+
+    heading_offset_deg: 90.0
+
+    # 큰 보드에 NAV-PVT 출력이 없어도 mmr_status_node가 RTK_FIX 상태를 볼 수 있도록
+    # HPPOSLLH 기반 NavSatFix를 /gnss/fix_pvt에도 발행.
+    publish_hpposllh_as_pvt_status: true
+
+    # 로그 검증 기준: 큰 보드 HPPOSLLH CEP50 약 1.05cm, R95 약 2.15cm.
+    # 현장 운용에서는 hAcc 5cm 이내면 RTK_FIX 판정 허용.
+    min_fix_hacc_m: 0.05
+
+    # 자동 정렬 응답 지연을 줄이기 위해 헤딩은 2개만 평균.
+    # 위치 필터는 기존 안정성을 유지하도록 5개를 계속 사용.
+    heading_filter_window: 2
+    position_filter_window: 5

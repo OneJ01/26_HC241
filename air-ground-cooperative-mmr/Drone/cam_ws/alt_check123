@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+import asyncio
+import csv
+import math
+import time
+from pathlib import Path
+
+from mavsdk import System
+
+
+# =========================
+# 설정
+# =========================
+SERIAL_URL = "serial:///dev/ttyACM0:115200"   # 필요시 수정
+PRINT_HZ = 1.0
+SAVE_CSV = True
+CSV_PATH = Path.home() / "alt_check_log.csv"
+
+
+# =========================
+# 상태 저장용
+# =========================
+telemetry_state = {
+    # position()
+    "lat_deg": None,
+    "lon_deg": None,
+    "abs_alt_m": None,              # telemetry.position().absolute_altitude_m (AMSL)
+    "rel_alt_m": None,              # telemetry.position().relative_altitude_m (home 기준)
+
+    # gps_info()
+    "gps_fix_type": None,
+    "num_satellites": None,
+
+    # raw_gps()
+    "raw_lat_deg": None,
+    "raw_lon_deg": None,
+    "raw_abs_alt_m": None,          # telemetry.raw_gps().absolute_altitude_m (AMSL)
+    "raw_ellipsoid_alt_m": None,    # telemetry.raw_gps().altitude_ellipsoid_m
+    "raw_h_acc_m": None,
+    "raw_v_acc_m": None,
+
+    # 디버깅용
+    "is_connected": False,
+    "is_global_position_ok": None,
+    "is_home_position_ok": None,
+    "health_ok": None,
+    "last_position_rx": None,
+    "last_gpsinfo_rx": None,
+    "last_health_rx": None,
+    "last_rawgps_rx": None,
+}
+
+
+def fmt(value, digits=3):
+    if value is None:
+        return "N/A"
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "N/A"
+        return f"{value:.{digits}f}"
+    return str(value)
+
+
+def init_csv(path: Path):
+    if not path.exists():
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "pc_time",
+
+                "lat_deg",
+                "lon_deg",
+                "abs_alt_m",
+                "rel_alt_m",
+
+                "gps_fix_type",
+                "num_satellites",
+
+                "raw_lat_deg",
+                "raw_lon_deg",
+                "raw_abs_alt_m",
+                "raw_ellipsoid_alt_m",
+                "raw_h_acc_m",
+                "raw_v_acc_m",
+
+                "is_connected",
+                "is_global_position_ok",
+                "is_home_position_ok",
+                "health_ok",
+
+                "last_position_rx",
+                "last_gpsinfo_rx",
+                "last_health_rx",
+                "last_rawgps_rx",
+            ])
+
+
+def append_csv(path: Path):
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+
+            telemetry_state["lat_deg"],
+            telemetry_state["lon_deg"],
+            telemetry_state["abs_alt_m"],
+            telemetry_state["rel_alt_m"],
+
+            telemetry_state["gps_fix_type"],
+            telemetry_state["num_satellites"],
+
+            telemetry_state["raw_lat_deg"],
+            telemetry_state["raw_lon_deg"],
+            telemetry_state["raw_abs_alt_m"],
+            telemetry_state["raw_ellipsoid_alt_m"],
+            telemetry_state["raw_h_acc_m"],
+            telemetry_state["raw_v_acc_m"],
+
+            telemetry_state["is_connected"],
+            telemetry_state["is_global_position_ok"],
+            telemetry_state["is_home_position_ok"],
+            telemetry_state["health_ok"],
+
+            telemetry_state["last_position_rx"],
+            telemetry_state["last_gpsinfo_rx"],
+            telemetry_state["last_health_rx"],
+            telemetry_state["last_rawgps_rx"],
+        ])
+
+
+async def wait_for_connection(drone: System):
+    print(f"[INFO] Connecting to FC: {SERIAL_URL}")
+    await drone.connect(system_address=SERIAL_URL)
+
+    async for state in drone.core.connection_state():
+        if state.is_connected:
+            telemetry_state["is_connected"] = True
+            print("[INFO] FC connected")
+            break
+
+
+async def request_telemetry_rates(drone: System):
+    try:
+        await drone.telemetry.set_rate_position(5.0)
+        print("[INFO] set_rate_position(5) OK")
+    except Exception as e:
+        print(f"[WARN] set_rate_position failed: {e}")
+
+    try:
+        await drone.telemetry.set_rate_gps_info(2.0)
+        print("[INFO] set_rate_gps_info(2) OK")
+    except Exception as e:
+        print(f"[WARN] set_rate_gps_info failed: {e}")
+
+    try:
+        await drone.telemetry.set_rate_raw_gps(2.0)
+        print("[INFO] set_rate_raw_gps(2) OK")
+    except Exception as e:
+        print(f"[WARN] set_rate_raw_gps failed: {e}")
+
+    try:
+        await drone.telemetry.set_rate_health(2.0)
+        print("[INFO] set_rate_health(2) OK")
+    except Exception as e:
+        print(f"[WARN] set_rate_health failed: {e}")
+
+
+async def watch_connection(drone: System):
+    async for state in drone.core.connection_state():
+        telemetry_state["is_connected"] = state.is_connected
+        print(f"[DBG] connection_state: connected={state.is_connected}")
+
+
+async def watch_health(drone: System):
+    async for health in drone.telemetry.health():
+        telemetry_state["is_global_position_ok"] = health.is_global_position_ok
+        telemetry_state["is_home_position_ok"] = health.is_home_position_ok
+        telemetry_state["health_ok"] = (
+            health.is_global_position_ok and health.is_home_position_ok
+        )
+        telemetry_state["last_health_rx"] = time.strftime("%H:%M:%S")
+        print(
+            "[DBG] health: "
+            f"global_ok={health.is_global_position_ok}, "
+            f"home_ok={health.is_home_position_ok}"
+        )
+
+
+async def watch_position(drone: System):
+    async for position in drone.telemetry.position():
+        telemetry_state["lat_deg"] = position.latitude_deg
+        telemetry_state["lon_deg"] = position.longitude_deg
+        telemetry_state["abs_alt_m"] = position.absolute_altitude_m
+        telemetry_state["rel_alt_m"] = position.relative_altitude_m
+        telemetry_state["last_position_rx"] = time.strftime("%H:%M:%S")
+        print(
+            "[DBG] position rx: "
+            f"lat={position.latitude_deg:.7f}, "
+            f"lon={position.longitude_deg:.7f}, "
+            f"abs={position.absolute_altitude_m:.6f}, "
+            f"rel={position.relative_altitude_m:.6f}"
+        )
+
+
+async def watch_gps_info(drone: System):
+    async for gps in drone.telemetry.gps_info():
+        telemetry_state["gps_fix_type"] = str(gps.fix_type)
+        telemetry_state["num_satellites"] = gps.num_satellites
+        telemetry_state["last_gpsinfo_rx"] = time.strftime("%H:%M:%S")
+        print(
+            "[DBG] gps_info rx: "
+            f"fix={gps.fix_type}, sats={gps.num_satellites}"
+        )
+
+
+async def watch_raw_gps(drone: System):
+    async for raw in drone.telemetry.raw_gps():
+        telemetry_state["raw_lat_deg"] = raw.latitude_deg
+        telemetry_state["raw_lon_deg"] = raw.longitude_deg
+        telemetry_state["raw_abs_alt_m"] = raw.absolute_altitude_m
+        telemetry_state["raw_ellipsoid_alt_m"] = raw.altitude_ellipsoid_m
+        telemetry_state["raw_h_acc_m"] = raw.horizontal_uncertainty_m
+        telemetry_state["raw_v_acc_m"] = raw.vertical_uncertainty_m
+        telemetry_state["last_rawgps_rx"] = time.strftime("%H:%M:%S")
+        print(
+            "[DBG] raw_gps rx: "
+            f"lat={raw.latitude_deg:.7f}, "
+            f"lon={raw.longitude_deg:.7f}, "
+            f"abs={raw.absolute_altitude_m:.6f}, "
+            f"ellipsoid={raw.altitude_ellipsoid_m:.6f}, "
+            f"h_acc={raw.horizontal_uncertainty_m:.3f}, "
+            f"v_acc={raw.vertical_uncertainty_m:.3f}"
+        )
+
+
+async def print_loop():
+    period = 1.0 / PRINT_HZ
+
+    while True:
+        print("=" * 78)
+        print(f"[TIME ] {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[LINK ] connected={fmt(telemetry_state['is_connected'])}")
+        print(
+            f"[HLTH ] global_ok={fmt(telemetry_state['is_global_position_ok'])}, "
+            f"home_ok={fmt(telemetry_state['is_home_position_ok'])}, "
+            f"health_ok={fmt(telemetry_state['health_ok'])}"
+        )
+        print(
+            f"[GPS  ] fix={fmt(telemetry_state['gps_fix_type'])}, "
+            f"sats={fmt(telemetry_state['num_satellites'])}"
+        )
+
+        print(
+            f"[POS  ] lat={fmt(telemetry_state['lat_deg'], 7)}, "
+            f"lon={fmt(telemetry_state['lon_deg'], 7)}"
+        )
+        print(
+            f"[ALT  ] position_abs_alt_m={fmt(telemetry_state['abs_alt_m'], 6)} m   (AMSL)"
+        )
+        print(
+            f"[ALT  ] position_rel_alt_m={fmt(telemetry_state['rel_alt_m'], 6)} m   (home 기준)"
+        )
+
+        print(
+            f"[RAW  ] lat={fmt(telemetry_state['raw_lat_deg'], 7)}, "
+            f"lon={fmt(telemetry_state['raw_lon_deg'], 7)}"
+        )
+        print(
+            f"[RAW  ] raw_abs_alt_m={fmt(telemetry_state['raw_abs_alt_m'], 6)} m   (AMSL)"
+        )
+        print(
+            f"[RAW  ] raw_ellipsoid_alt_m={fmt(telemetry_state['raw_ellipsoid_alt_m'], 6)} m"
+        )
+        print(
+            f"[RAW  ] h_acc={fmt(telemetry_state['raw_h_acc_m'], 3)} m, "
+            f"v_acc={fmt(telemetry_state['raw_v_acc_m'], 3)} m"
+        )
+
+        print(
+            f"[LAST ] position_rx={fmt(telemetry_state['last_position_rx'])}, "
+            f"gpsinfo_rx={fmt(telemetry_state['last_gpsinfo_rx'])}, "
+            f"health_rx={fmt(telemetry_state['last_health_rx'])}, "
+            f"rawgps_rx={fmt(telemetry_state['last_rawgps_rx'])}"
+        )
+
+        if SAVE_CSV:
+            append_csv(CSV_PATH)
+
+        await asyncio.sleep(period)
+
+
+async def main():
+    if SAVE_CSV:
+        init_csv(CSV_PATH)
+        print(f"[INFO] CSV logging -> {CSV_PATH}")
+
+    drone = System()
+    await wait_for_connection(drone)
+
+    await request_telemetry_rates(drone)
+    await asyncio.sleep(2.0)
+
+    await asyncio.gather(
+        watch_connection(drone),
+        watch_health(drone),
+        watch_position(drone),
+        watch_gps_info(drone),
+        watch_raw_gps(drone),
+        print_loop(),
+    )
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[INFO] Stopped by user")
